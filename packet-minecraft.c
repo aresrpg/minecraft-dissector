@@ -4,6 +4,8 @@
 
 #include <epan/packet.h>
 #include <epan/proto.h>
+#include <epan/conversation.h>
+#include <epan/proto_data.h>
 #include <ws_attributes.h>
 #include <ws_symbol_export.h>
 #include <ws_version.h>
@@ -19,9 +21,20 @@ WS_DLL_PUBLIC_DEF const int plugin_want_minor = WIRESHARK_VERSION_MINOR;
 
 WS_DLL_PUBLIC void plugin_register(void);
 
+static void minecraft_add_varint(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_string(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_u8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_i8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_u16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_i16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_i64(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+
+
+#include "generated.c"
 
 static int proto_minecraft = -1;
 static int hf_length = -1;
+static int hf_data_length = -1;
 static int hf_packet_id = -1;
 static int hf_data = -1;
 
@@ -30,6 +43,10 @@ static hf_register_info hf[] = {
     { &hf_length,
         { "Length", "minecraft.length", FT_UINT32, BASE_DEC, NULL,
             0x00, "Packet Length", HFILL }},
+
+    { &hf_data_length,
+        { "Data Length", "minecraft.data_length", FT_UINT32, BASE_DEC, NULL,
+            0x00, "Packet Data Length", HFILL }},
 
     { &hf_packet_id,
         { "Packet Id", "minecraft.packet_id", FT_UINT32, BASE_HEX, NULL,
@@ -66,10 +83,104 @@ static bool read_varint(guint32 *result, tvbuff_t *tvb, gint *offset)
     return false;
 }
 
-static int dissect_minecraft_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset, guint32 len)
+static void minecraft_add_varint(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const guint offset_start = *offset;
+    guint32 value = 0;
+    read_varint(&value, tvb, offset);
+    proto_tree_add_uint(tree, hfindex, tvb, offset_start, *offset - offset_start, value);
+}
+
+static void minecraft_add_string(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const guint offset_start = *offset;
+    guint32 value = 0;
+    read_varint(&value, tvb, offset);
+    proto_tree_add_item(tree, hfindex, tvb, offset_start, *offset - offset_start + value, ENC_NA);
+    *offset += value;
+}
+
+static void minecraft_add_u8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const guint8 v = tvb_get_guint8(tvb, *offset);
+    proto_tree_add_uint(tree, hfindex, tvb, *offset, 1, v);
+    *offset += 1;
+}
+
+static void minecraft_add_i8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const gint8 v = tvb_get_gint8(tvb, *offset);
+    proto_tree_add_int(tree, hfindex, tvb, *offset, 1, v);
+    *offset += 1;
+}
+
+static void minecraft_add_u16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const guint16 v = tvb_get_ntohs(tvb, *offset);
+    proto_tree_add_uint(tree, hfindex, tvb, *offset, 2, v);
+    *offset += 2;
+}
+
+static void minecraft_add_i16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const gint16 v = tvb_get_ntohis(tvb, *offset);
+    proto_tree_add_int(tree, hfindex, tvb, *offset, 2, v);
+    *offset += 2;
+}
+
+static void minecraft_add_i64(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const gint64 v = tvb_get_ntohi48(tvb, *offset);
+    proto_tree_add_int64(tree, hfindex, tvb, *offset, 2, v);
+    *offset += 2;
+}
+
+
+struct minecraft_conversation_data {
+    guint32 state;
+    guint32 compression_threshold;
+};
+
+struct minecraft_frame_data {
+    guint32 state;
+    bool compressed;
+};
+
+
+static void dissect_minecraft_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset, guint32 len)
 {
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "minecraft");
+
+    conversation_t *conversation = find_or_create_conversation(pinfo);
+
+    struct minecraft_conversation_data *conversation_data = (struct minecraft_conversation_data *)conversation_get_proto_data(conversation, proto_minecraft);
+    if (conversation_data == NULL) {
+        conversation_data = wmem_new0(wmem_file_scope(), struct minecraft_conversation_data);
+        conversation_data->state = 0;
+        conversation_data->compression_threshold = 0;
+        conversation_add_proto_data(conversation, proto_minecraft, conversation_data);
+    }
+
+    struct minecraft_frame_data *frame_data = (struct minecraft_frame_data  *)p_get_proto_data(wmem_file_scope(), pinfo, proto_minecraft, 0);
+    if (frame_data == NULL) {
+        frame_data = wmem_new(wmem_file_scope(), struct minecraft_frame_data);
+        frame_data->state = conversation_data->state;
+        frame_data->compressed = conversation_data->compression_threshold != 0;
+        p_add_proto_data(wmem_file_scope(), pinfo, proto_minecraft, 0, frame_data);
+    }
+
+    if (frame_data->compressed) {
+        const guint offset_start = offset;
+        guint32 data_length;
+        read_varint(&data_length, tvb, &offset);
+        proto_tree_add_uint(tree, hf_data_length, tvb, offset_start, offset - offset_start, data_length);
+
+        len -= (offset - offset_start);
+
+        if (data_length != 0) {
+            tvb = tvb_uncompress(tvb, offset, len);
+            offset = 0;
+            len = data_length;
+        }
+    }
+
+    bool to_server = pinfo->destport == pinfo->match_uint;
+
     const guint offset_start = offset;
-    guint32 packet_id = 0;
+    guint32 packet_id;
     read_varint(&packet_id, tvb, &offset);
     const guint packet_id_len = offset - offset_start;
     proto_tree_add_uint(tree, hf_packet_id, tvb, offset_start, packet_id_len, packet_id);
@@ -77,6 +188,46 @@ static int dissect_minecraft_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     const guint data_len = len - packet_id_len;
     proto_item *data_item = proto_tree_add_item(tree, hf_data, tvb, offset, data_len, ENC_NA);
     proto_tree *subtree = proto_item_add_subtree(data_item, ett_data);
+
+    switch (frame_data->state) {
+        case 0:
+            if (to_server) {
+                handshaking_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+
+                if (packet_id == 0x00) {
+                    conversation_data->state = tvb_get_guint8(tvb, offset + data_len - 1);
+                }
+            } else
+                handshaking_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+            break;
+        case 1:
+            if (to_server)
+                status_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+            else
+                status_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+            break;
+        case 2:
+            if (to_server)
+                login_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+            else {
+                login_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+
+                if (packet_id == 0x02) {
+                    conversation_data->state = 3;
+                }
+
+                if (packet_id == 0x03) {
+                    read_varint(&conversation_data->compression_threshold, tvb, &offset);
+                }
+            }
+            break;
+        case 3:
+            if (to_server)
+                play_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+            else
+                play_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+            break;
+    }
 }
 
 static int dissect_minecraft(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
@@ -119,6 +270,7 @@ static void proto_register_minecraft(void)
     proto_minecraft = proto_register_protocol("Minecraft Protocol", "Minecraft", "minecraft");
 
     proto_register_field_array(proto_minecraft, hf, array_length(hf));
+    proto_register_field_array(proto_minecraft, hf_generated, array_length(hf_generated));
     proto_register_subtree_array(ett, array_length(ett));
 }
 
