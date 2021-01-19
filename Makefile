@@ -1,5 +1,9 @@
 CPPFLAGS := $(shell pkg-config --cflags wireshark)
 CFLAGS ?= -fPIC
+LIBDIR := $(HOME)/.local/lib
+WIRESHARK_PLUGINDIR := $(shell pkg-config "--define-variable=libdir=$(LIBDIR)" --variable=plugindir wireshark)
+
+.DEFAULT_GOAL := packet-minecraft.so
 
 generated.c:
 	node generate.js > $@
@@ -11,5 +15,9 @@ packet-minecraft.so: packet-minecraft.o
 
 .PHONY: install
 install: packet-minecraft.so
-	mkdir -p $(HOME)/.local/lib/wireshark/plugins/3.2/epan
-	cp -p packet-minecraft.so $(HOME)/.local/lib/wireshark/plugins/3.2/epan/packet-minecraft.so
+	mkdir -p $(WIRESHARK_PLUGINDIR)/epan
+	cp -p packet-minecraft.so $(WIRESHARK_PLUGINDIR)/epan/minecraft.so
+
+.PHONY: clean
+clean:
+	$(RM) -rf generated.c packet-minecraft.o packet-minecraft.so
