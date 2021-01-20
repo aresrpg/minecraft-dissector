@@ -36,7 +36,6 @@ static int proto_minecraft = -1;
 static int hf_length = -1;
 static int hf_data_length = -1;
 static int hf_packet_id = -1;
-static int hf_data = -1;
 
 static hf_register_info hf[] = {
 
@@ -51,10 +50,6 @@ static hf_register_info hf[] = {
     { &hf_packet_id,
         { "Packet Id", "minecraft.packet_id", FT_UINT32, BASE_HEX, NULL,
             0x0, "Packet Id", HFILL }},
-
-    { &hf_data,
-        { "Data", "minecraft.data", FT_BYTES, BASE_NONE, NULL,
-            0x0, "Packet Data", HFILL }},
 };
 
 static int ett_minecraft = -1;
@@ -186,31 +181,29 @@ static void dissect_minecraft_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tr
     proto_tree_add_uint(tree, hf_packet_id, tvb, offset_start, packet_id_len, packet_id);
 
     const guint data_len = len - packet_id_len;
-    proto_item *data_item = proto_tree_add_item(tree, hf_data, tvb, offset, data_len, ENC_NA);
-    proto_tree *subtree = proto_item_add_subtree(data_item, ett_data);
 
     switch (frame_data->state) {
         case 0:
             if (to_server) {
-                handshaking_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+                handshaking_toServer(packet_id, tvb, pinfo, tree, offset, data_len);
 
                 if (packet_id == 0x00) {
                     conversation_data->state = tvb_get_guint8(tvb, offset + data_len - 1);
                 }
             } else
-                handshaking_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+                handshaking_toClient(packet_id, tvb, pinfo, tree, offset, data_len);
             break;
         case 1:
             if (to_server)
-                status_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+                status_toServer(packet_id, tvb, pinfo, tree, offset, data_len);
             else
-                status_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+                status_toClient(packet_id, tvb, pinfo, tree, offset, data_len);
             break;
         case 2:
             if (to_server)
-                login_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+                login_toServer(packet_id, tvb, pinfo, tree, offset, data_len);
             else {
-                login_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+                login_toClient(packet_id, tvb, pinfo, tree, offset, data_len);
 
                 if (packet_id == 0x02) {
                     conversation_data->state = 3;
@@ -223,9 +216,9 @@ static void dissect_minecraft_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tr
             break;
         case 3:
             if (to_server)
-                play_toServer(packet_id, tvb, pinfo, subtree, offset, data_len);
+                play_toServer(packet_id, tvb, pinfo, tree, offset, data_len);
             else
-                play_toClient(packet_id, tvb, pinfo, subtree, offset, data_len);
+                play_toClient(packet_id, tvb, pinfo, tree, offset, data_len);
             break;
     }
 }
