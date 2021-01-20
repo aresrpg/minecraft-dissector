@@ -127,18 +127,18 @@ const natives = {
     }
   },
   buffer({ countType }, { read, path, name }) {
-    const count = read(countType, undefined, { read, path: `${path}_count`})
+    const count = read(countType, undefined, { read, path: `${path}_len`})
 
     hf.push({
-      name: name ? `${name} Count` : 'Count',
-      path: `${path}_count`,
+      name: name ? `${name}Length` : 'Length',
+      path: `${path}_len`,
       type: count.hf_type,
     })
 
     return {
       code:
-`${count.return_type} ${path}_count = ${count.code}
-minecraft_add_buffer(tree, hf_${path}, tvb, &offset, len);`,
+`${count.return_type} ${path}_len = ${count.code}
+minecraft_add_buffer(tree, hf_${path}, tvb, &offset, ${path}_len);`,
       hf_type: "FT_BYTES",
     }
   },
