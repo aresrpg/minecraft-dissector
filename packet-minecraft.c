@@ -21,13 +21,20 @@ WS_DLL_PUBLIC_DEF const int plugin_want_minor = WIRESHARK_VERSION_MINOR;
 
 WS_DLL_PUBLIC void plugin_register(void);
 
-static void minecraft_add_varint(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static guint32 minecraft_add_varint(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 static void minecraft_add_string(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_bool(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 static void minecraft_add_u8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 static void minecraft_add_i8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 static void minecraft_add_u16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 static void minecraft_add_i16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_i32(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 static void minecraft_add_i64(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_f32(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_f64(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_buffer(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset, guint32 len);
+static void minecraft_add_restbuffer(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
+static void minecraft_add_UUID(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset);
 
 
 #include "generated.c"
@@ -78,11 +85,12 @@ static bool read_varint(guint32 *result, tvbuff_t *tvb, gint *offset)
     return false;
 }
 
-static void minecraft_add_varint(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+static guint32 minecraft_add_varint(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
     const guint offset_start = *offset;
     guint32 value = 0;
     read_varint(&value, tvb, offset);
     proto_tree_add_uint(tree, hfindex, tvb, offset_start, *offset - offset_start, value);
+    return value;
 }
 
 static void minecraft_add_string(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
@@ -96,6 +104,12 @@ static void minecraft_add_string(proto_tree *tree, int hfindex, tvbuff_t *tvb, g
 static void minecraft_add_u8(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
     const guint8 v = tvb_get_guint8(tvb, *offset);
     proto_tree_add_uint(tree, hfindex, tvb, *offset, 1, v);
+    *offset += 1;
+}
+
+static void minecraft_add_bool(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const guint8 v = tvb_get_guint8(tvb, *offset);
+    proto_tree_add_boolean(tree, hfindex, tvb, *offset, 1, v);
     *offset += 1;
 }
 
@@ -117,12 +131,42 @@ static void minecraft_add_i16(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint
     *offset += 2;
 }
 
+static void minecraft_add_i32(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const gint32 v = tvb_get_ntohil(tvb, *offset);
+    proto_tree_add_int(tree, hfindex, tvb, *offset, 4, v);
+    *offset += 4;
+}
+
 static void minecraft_add_i64(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
     const gint64 v = tvb_get_ntohi48(tvb, *offset);
     proto_tree_add_int64(tree, hfindex, tvb, *offset, 2, v);
     *offset += 2;
 }
 
+static void minecraft_add_f32(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const gfloat v = tvb_get_ntohieee_float(tvb, *offset);
+    proto_tree_add_float(tree, hfindex, tvb, *offset, 4, v);
+    *offset += 4;
+}
+
+static void minecraft_add_f64(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    const gdouble v = tvb_get_ntohieee_double(tvb, *offset);
+    proto_tree_add_double(tree, hfindex, tvb, *offset, 8, v);
+    *offset += 8;
+}
+
+static void minecraft_add_buffer(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset, guint32 len) {
+    proto_tree_add_bytes(tree, hfindex, tvb, *offset, len, tvb_memdup(wmem_packet_scope(), tvb, *offset, len));
+    *offset += len;
+}
+
+static void minecraft_add_restbuffer(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    minecraft_add_buffer(tree, hfindex, tvb, offset, tvb_reported_length(tvb) - *offset);
+}
+
+static void minecraft_add_UUID(proto_tree *tree, int hfindex, tvbuff_t *tvb, gint *offset) {
+    minecraft_add_buffer(tree, hfindex, tvb, offset, 16);
+}
 
 struct minecraft_conversation_data {
     guint32 state;
@@ -137,7 +181,7 @@ struct minecraft_frame_data {
 
 static void dissect_minecraft_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset, guint32 len)
 {
-    col_set_str(pinfo->cinfo, COL_PROTOCOL, "minecraft");
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "Minecraft");
 
     conversation_t *conversation = find_or_create_conversation(pinfo);
 
@@ -241,8 +285,6 @@ static int dissect_minecraft(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
             pinfo->desegment_len = len - available;
             return (offset + available);
         }
-
-        col_set_str(pinfo->cinfo, COL_PROTOCOL, "minecraft");
 
         proto_item *item = proto_tree_add_item(tree, proto_minecraft, tvb, offset, len, ENC_NA);
 

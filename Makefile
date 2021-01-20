@@ -5,7 +5,7 @@ WIRESHARK_PLUGINDIR := $(shell pkg-config "--define-variable=libdir=$(LIBDIR)" -
 
 .DEFAULT_GOAL := packet-minecraft.so
 
-generated.c:
+generated.c: generate.js
 	node generate.js > $@
 
 packet-minecraft.o: packet-minecraft.c generated.c
