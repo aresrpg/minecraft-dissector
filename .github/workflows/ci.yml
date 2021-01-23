@@ -1,6 +1,14 @@
 name: CI
 
-on: [push]
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - master
 
 jobs:
   build-linux:
@@ -64,3 +72,45 @@ jobs:
         with:
           name: windows
           path: dissector/packet-minecraft.dll
+
+  publish:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download linux artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: linux
+      - name: Download windows artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: windows
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+      - name: Upload packet-minecraft.so
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./packet-minecraft.so
+          asset_name: packet-minecraft.so
+          asset_content_type: application/octet-stream
+      - name: Upload packet-minecraft.dll
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./packet-minecraft.dll
+          asset_name: packet-minecraft.dll
+          asset_content_type: application/octet-stream
