@@ -1,0 +1,49 @@
+name: Windows
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PLATFORM: x64
+      WIRESHARK_LIB_DIR: C:/wireshark-win64-libs-3.4
+      GLIB_INCLUDE: vcpkg-export-20190318-win64ws/installed/x64-windows/include
+    steps:
+      - name: Checkout Wireshark
+        uses: actions/checkout@v2
+        with:
+          repository: wireshark/wireshark
+          ref: wireshark-3.4.2
+          path: wireshark
+      - name: Choco install Wireshark Deps
+        run: choco install -y --no-progress cmake winflexbison3 strawberryperl asciidoctorj xsltproc docbook-bundle
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1.0.2
+        with:
+          vs-version: 16.4
+      - run: mkdir build
+        working-directory: wireshark
+      - run: cmake -A x64 .. -DBUILD_wireshark=OFF
+        working-directory: wireshark/build
+      - run: cmake --build . --config RelWithDebInfo --target epan
+        working-directory: wireshark/build
+
+      - uses: actions/checkout@v2
+        with:
+          path: dissector
+          submodules: true
+      - run: choco install -y --no-progress make mingw
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+      - run: make packet-minecraft.dll
+        env:
+          CPPFLAGS: -I../wireshark/build -I../wireshark -I${{ env.WIRESHARK_LIB_DIR }}/${{ env.GLIB_INCLUDE }} -D_SSIZE_T_DEFINED
+          LDLIBS: ../wireshark/build/run/RelWithDebInfo/wireshark.lib
+          CC: gcc
+        working-directory: dissector
+      - uses: actions/upload-artifact@v2
+        with:
+          path: dissector/packet-minecraft.dll
+
