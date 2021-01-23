@@ -1,9 +1,26 @@
-name: Windows
+name: CI
 
 on: [push]
 
 jobs:
-  build:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - run: sudo add-apt-repository ppa:wireshark-dev/stable
+      - run: sudo apt-get install make gcc pkg-config wireshark-dev
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+      - run: make packet-minecraft.so
+      - uses: actions/upload-artifact@v2
+        with:
+          name: linux
+          path: packet-minecraft.so
+
+  build-windows:
     runs-on: windows-latest
     env:
       PLATFORM: x64
@@ -45,5 +62,5 @@ jobs:
         working-directory: dissector
       - uses: actions/upload-artifact@v2
         with:
+          name: windows
           path: dissector/packet-minecraft.dll
-
