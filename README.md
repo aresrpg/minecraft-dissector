@@ -27,8 +27,8 @@ You can use the `minecraft` filter to only display minecraft packets
 ## Dependencies
 
 ```bash
-apt install make gcc pkg-config wireshark-dev # Ubuntu
-nix-shell -p wireshark.dev pkgconfig glib.dev # Nixos
+apt install make gcc pkg-config wireshark-dev nodejs # Ubuntu
+nix-shell -p gnumake wireshark.dev pkgconfig glib.dev nodejs-14_x # Nixos
 ```
 
 ### Clone and compile
