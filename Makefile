@@ -1,4 +1,4 @@
-CPPFLAGS ?= $(shell pkg-config --cflags wireshark)
+CPPFLAGS ?= $(shell pkg-config --cflags wireshark libgcrypt)
 CFLAGS ?= -fPIC
 LIBDIR ?= $(HOME)/.local/lib
 WIRESHARK_PLUGINDIR ?= $(shell pkg-config "--define-variable=libdir=$(LIBDIR)" --variable=plugindir wireshark)
