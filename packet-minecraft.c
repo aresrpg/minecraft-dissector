@@ -1,4 +1,6 @@
-#include <config.h>
+#define VERSION_MAJOR 4
+#define VERSION_MINOR 0
+
 
 #define WS_BUILD_DLL
 
