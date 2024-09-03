@@ -79,11 +79,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download linux artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
         with:
           name: linux
       - name: Download windows artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
         with:
           name: windows
       - name: Create Release
